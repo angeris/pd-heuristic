@@ -10,7 +10,31 @@ import Base.abs
 
 # rc("text", usetex=true)
 
+# --- Helper functions
+function sum_squares(m, x)
+    t = @variable(m)
+    @constraint(m, [t+1; t-1; 2*x] ∈ SecondOrderCone())
 
+    return t
+end
+
+function norm(m, x)
+    t = @variable(m)
+    @constraint(m, [t; x] ∈ SecondOrderCone())
+
+    return t
+end
+
+function abs(v::VariableRef)
+    model = v.model
+
+    t = @variable(model)
+    @constraint(model, t ≥ v)
+    @constraint(model, t ≥ -v)
+
+    return t
+end
+# --- End helpers
 
 # @show "Initial average temperature is $(sum(t_c_initial)/m)"
 
@@ -19,7 +43,7 @@ import Base.abs
 n_edges = 3
 n_vertices = 3
 
-C = Diagonal([.6, .2])
+C = Diagonal([.5, .05])
 B = .01 * Diagonal(ones(2))
 A = [
     -1 0 1
@@ -36,7 +60,7 @@ g_bar = Diagonal((g_max + g_min) / 2)
 m = 200
 
 t = range(0, 1, length=m)
-ω = 5*π
+ω = 4*π
 T_min = 50
 K = 20
 
@@ -50,54 +74,35 @@ old_val = Inf
 
 max_iter = 1000
 
-# Initial solution
-e_current = 70 * ones(n_vertices)
+e_min, e_max = 65, 75
 
-signs = ones(n_edges, m-1)
-u_total = 0
+# --- Initial solve
+g_init = copy(g_bar)
 
-for idx=1:m-1
-    global u_total
-    signs[:, idx] = sign.(A' * e_current)
+model = Model(with_optimizer(Mosek.Optimizer))
+@variable(model, e[1:n_vertices, 1:m])
+@variable(model, u[1:2, 1:m-1])
 
-    e_new = clamp.(C \ (C*e_current[1:2] - h * A[1:2, :] * g_bar * A' * e_current), 65, 75)
-    u_total += sum(abs.(B \ (C*(e_new - e_current[1:2]) + h * A[1:2, :] * g_bar * A' * e_current) ) ) / h
-    e_current[1:2] .= e_new
-    e_current[3] = e_ambient[idx+1]
-end
+# Objective and control constraints
+@objective(model, Min, norm(model, u[:]) + 1e-4 * h^2 * sum_squares(model, e[1,1:m-1] .- e[1,2:m]))
+@constraint(model, e_min .≤ e[1, :] .≤ e_max)
+@constraint(model, e_min .≤ e[2, :] .≤ e_max)
+
+# Model constraints
+@constraint(model, e[1:2, 1] .== e[1:2, end])
+@constraint(model, e[3, :] .== e_ambient)
+@constraint(model, C * e[1:2, 2:m] .== C * e[1:2, 1:m-1] - h * A[1:2, :] * (g_init * A' * e[:, 1:m-1]) + h * B * u)
+
+optimize!(model)
+
+@show termination_status(model)
+
+signs = sign.(A' * value.(e)[:, 1:m-1])
 
 signs[signs .== 0] .= 1
+# --- End initial solve
 
-function sum_squares(m, x)
-    if isempty(x)
-        return 0
-    end
-    t = @variable(m)
-    @constraint(m, [t+1; t-1; 2*x] ∈ SecondOrderCone())
 
-    return t
-end
-
-function dead_zone(x::VariableRef, upper, lower)
-    model = x.model
-
-    t = @variable(model)
-    @constraint(model, t ≥ 0)
-    @constraint(model, t ≥ x - upper)
-    @constraint(model, t ≥ lower - x)
-
-    return t
-end
-
-function abs(v::VariableRef)
-    model = v.model
-
-    t = @variable(model)
-    @constraint(model, t ≥ v)
-    @constraint(model, t ≥ -v)
-
-    return t
-end
 
 # Repeated optimization
 for curr_iter ∈ 1:max_iter
@@ -113,12 +118,12 @@ for curr_iter ∈ 1:max_iter
     @variable(model, x[1:n_edges, 1:m-1])
 
     # Objective and control constraints
-    @objective(model, Min, h * (sum(abs.(u[1,:])) + sum(abs.(u[2,:]))) + 1e-4 * h^2 * sum_squares(model, e[1,1:m-1] .- e[1,2:m]))
-    @constraint(model, 65 .≤ e[1, :] .≤ 75)
-    @constraint(model, 65 .≤ e[2, :] .≤ 75)
+    @objective(model, Min, norm(model, u[:]) + 1e-4 * h^2 * sum_squares(model, e[1,1:m-1] .- e[1,2:m]))
+    @constraint(model, e_min .≤ e[1, :] .≤ e_max)
+    @constraint(model, e_min .≤ e[2, :] .≤ e_max)
 
     # Model constraints
-    @constraint(model, e[1:2, 1] .== 70)
+    @constraint(model, e[1:2, 1] .== e[1:2, end])
     @constraint(model, e[3, :] .== e_ambient)
     @constraint(model, C * e[1:2, 2:m] .== C * e[1:2, 1:m-1] - h * A[1:2, :] * w + h * B * u)
     @constraint(model, v .== A' * e[:,1:m-1])
@@ -188,7 +193,5 @@ for curr_iter ∈ 1:max_iter
 end
 
 end
-
-@info "Initial heuristic objective value : $(h * u_total)"
 
 end
