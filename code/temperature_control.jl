@@ -36,8 +36,6 @@ function abs(v::VariableRef)
 end
 # --- End helpers
 
-# @show "Initial average temperature is $(sum(t_c_initial)/m)"
-
 @time begin
 
 n_edges = 3
@@ -147,6 +145,7 @@ for curr_iter ∈ 1:max_iter
             @info "Tolerance reached, breaking."
         end
 
+	# Plot figures
         figure(figsize=(5, 15))
 
         subplot(311)

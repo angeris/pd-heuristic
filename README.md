@@ -1,4 +1,4 @@
-# Code for Computational Bounds for Photonic Design
+# Code for "A new physical design heuristic"
 
 This repository contains the code used to generate most figures for the paper
 [A new physical design heuristic](http://stanford.edu/~guillean/papers/physical_design_heuristic.pdf) by
