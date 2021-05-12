@@ -1,10 +1,8 @@
-module Heuristic
-
 using LinearAlgebra
 using SparseArrays
 using JuMP
 using MosekTools
-using PyPlot
+using Plots
 
 n = 101
 w = 4 * pi
@@ -23,10 +21,8 @@ z_2d[1:left_idx, left_idx:right_idx] .= 0
 b_2d = zeros(n, n)
 b_2d[1:left_idx, left_idx:right_idx] .= n^2
 
-figure(figsize=(16, 5))
-subplot(131)
-imshow(b_2d)
-title(raw"Excitation (S)")
+l = @layout [a b c]
+p1 = heatmap(b_2d, title=raw"Excitation (S)", colorbar=:none)
 
 z_hat = z_2d[:]
 b = b_2d[:]
@@ -40,9 +36,7 @@ mask_2d = zeros(n, n)
 mask_2d[end-div(n,4):end, left_idx:right_idx] .= 1
 mask = mask_2d[:]
 
-subplot(132)
-imshow(mask_2d)
-title(raw"Mask (B)")
+p2 = heatmap(mask_2d, title=raw"Mask (B)", colorbar=:none)
 
 θ_bar = (θ_max + θ_min) / 2
 ρ = (θ_max - θ_min) / 2
@@ -61,6 +55,7 @@ signs = 2 * (sol[1:n^2] .≥ 0) .- 1
 ϵ_tol = 1e-5
 
 final_design = zeros(n, n)
+final_field = nothing
 
 old_val = Inf
 
@@ -88,6 +83,7 @@ for curr_iter ∈ 1:max_iter
     if !any(near_zero) || old_val - objective_value(m) < ϵ_tol
         @info "No more directions to switch, breaking."
         final_design .= clamp.(reshape(value.(y) ./ value.(z), n, n), -1, 1)
+        final_field = value.(z)
         break
     end
 
@@ -98,9 +94,9 @@ end
 
 end
 
-subplot(133)
-imshow(final_design)
-title("Final design")
-savefig("paper_figures/complete_figure.pdf", bbox_inches="tight")
+p3 = heatmap(final_design, title="Final design", colorbar=:none)
+plot(p1, p2, p3, layout=l, size=(1200, 400))
+savefig("paper_figures/complete_figure.pdf")
 
-end
+heatmap(reshape(final_field, n, n), colorbar=:none, size=(400, 400))
+savefig("paper_figures/output_field.pdf")
